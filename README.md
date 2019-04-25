@@ -42,6 +42,7 @@ If you find this repo useful in your research, please consider citing:
 ### Dependencies:
 
 This code makes use of the following packages:
+
 0. [`scikit-learn`](http://scikit-learn.org/stable/)
 1. [`scikit-image`](http://scikit-image.org/download)
 2. [`FilterPy`](https://github.com/rlabbe/filterpy)
