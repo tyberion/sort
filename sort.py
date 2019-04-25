@@ -18,13 +18,14 @@
 from __future__ import print_function
 
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from sklearn.utils.linear_assignment_ import linear_assignment
 
 from filterpy.kalman import KalmanFilter
 
 from sort_utils import iou, convert_bbox_to_z, convert_x_to_bbox
+
+DIM_X = 7
+DIM_Z = 4
 
 
 def associate_detections_to_trackers(detections, trackers, iou_threshold = 0.3):
@@ -33,20 +34,23 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold = 0.3):
 
     Returns 3 lists of matches, unmatched_detections and unmatched_trackers
     """
-    if(len(trackers)==0):
-        return np.empty((0,2),dtype=int), np.arange(len(detections)), np.empty((0,5),dtype=int)
+    
+    if(len(trackers) == 0):
+        return np.empty((0, 2), dtype=int), np.arange(len(detections)), np.empty((0, 5), dtype=int)
+    
+    unmatched_detections = []
+    unmatched_trackers = []
     iou_matrix = np.zeros((len(detections), len(trackers)), dtype=np.float32)
 
     for d, det in enumerate(detections):
         for t, trk in enumerate(trackers):
-            iou_matrix[d,t] = iou(det, trk)
+            iou_matrix[d, t] = iou(det, trk)
     matched_indices = linear_assignment(-iou_matrix)
 
-    unmatched_detections = []
-    for d,det in enumerate(detections):
-        if(d not in matched_indices[:,0]):
+    for d, det in enumerate(detections):
+        if(d not in matched_indices[:, 0]):
             unmatched_detections.append(d)
-    unmatched_trackers = []
+            
     for t,trk in enumerate(trackers):
         if(t not in matched_indices[:,1]):
             unmatched_trackers.append(t)
@@ -54,15 +58,15 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold = 0.3):
     #filter out matched with low IOU
     matches = []
     for m in matched_indices:
-        if(iou_matrix[m[0],m[1]]<iou_threshold):
+        if(iou_matrix[m[0], m[1]] < iou_threshold):
             unmatched_detections.append(m[0])
             unmatched_trackers.append(m[1])
         else:
             matches.append(m.reshape(1,2))
-    if(len(matches)==0):
-        matches = np.empty((0,2),dtype=int)
+    if(len(matches) == 0):
+        matches = np.empty((0, 2), dtype=int)
     else:
-        matches = np.concatenate(matches,axis=0)
+        matches = np.concatenate(matches, axis=0)
 
     return matches, np.array(unmatched_detections), np.array(unmatched_trackers)
 
@@ -78,9 +82,13 @@ class KalmanBoxTracker(object):
         """
         
         #define constant velocity model
-        self.kf = KalmanFilter(dim_x=7, dim_z=4)
-        self.kf.F = np.array([[1,0,0,0,1,0,0],[0,1,0,0,0,1,0],[0,0,1,0,0,0,1],[0,0,0,1,0,0,0], [0,0,0,0,1,0,0],[0,0,0,0,0,1,0],[0,0,0,0,0,0,1]])
-        self.kf.H = np.array([[1,0,0,0,0,0,0],[0,1,0,0,0,0,0],[0,0,1,0,0,0,0],[0,0,0,1,0,0,0]])
+        self.kf = KalmanFilter(dim_x=DIM_X, dim_z=DIM_Z)
+        
+        self.kf.F = np.eye(DIM_X)
+        self.kf.F[:DIM_X - DIM_Z, DIM_Z - DIM_X:] = np.eye(3)
+        
+        self.kf.H = np.zeros((DIM_Z, DIM_X))
+        self.kf.H[:DIM_Z, :DIM_Z] = np.eye(DIM_Z)
 
         self.kf.R[2:,2:] *= 10.
         self.kf.P[4:,4:] *= 1000. #give high uncertainty to the unobservable initial velocities
@@ -112,11 +120,11 @@ class KalmanBoxTracker(object):
         """
         Advances the state vector and returns the predicted bounding box estimate.
         """
-        if((self.kf.x[6]+self.kf.x[2])<=0):
+        if((self.kf.x[6] + self.kf.x[2]) <= 0):
             self.kf.x[6] *= 0.0
         self.kf.predict()
         self.age += 1
-        if(self.time_since_update>0):
+        if(self.time_since_update > 0):
             self.hit_streak = 0
         self.time_since_update += 1
         bbox = convert_x_to_bbox(self.kf.x.astype('float32'))
@@ -131,7 +139,7 @@ class KalmanBoxTracker(object):
 
 
 class Sort(object):
-    def __init__(self,max_age=1,min_hits=3):
+    def __init__(self, max_age=1, min_hits=3):
         """
         Sets key parameters for SORT
         """
@@ -167,7 +175,7 @@ class Sort(object):
         #update matched trackers with assigned detections
         for t, trk in enumerate(self.trackers):
             if(t not in unmatched_trks):
-                d = matched[np.where(matched[:, 1]==t)[0], 0]
+                d = matched[np.where(matched[:, 1] == t)[0], 0]
                 dd = dets[d, :][0]
                 trk.update(dd)
 
@@ -178,7 +186,8 @@ class Sort(object):
         i = len(self.trackers)
         for trk in reversed(self.trackers):
                 d = trk.get_state()[0]
-                if((trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)):
+                if((trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or
+                                                    self.frame_count <= self.min_hits)):
                     ret.append(np.concatenate((d, [trk.id + 1])).reshape(1, -1)) # +1 as MOT benchmark requires positive
                 i -= 1
                 #remove dead tracklet
@@ -190,6 +199,8 @@ class Sort(object):
 
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
     from skimage import io
     import os.path
     import time
@@ -203,16 +214,16 @@ if __name__ == '__main__':
             return args
         
     # all train
-    sequences = ['PETS09-S2L1','TUD-Campus','TUD-Stadtmitte','ETH-Bahnhof','ETH-Sunnyday','ETH-Pedcross2','KITTI-13','KITTI-17','ADL-Rundle-6','ADL-Rundle-8','Venice-2']
+    sequences = ['PETS09-S2L1', 'TUD-Campus', 'TUD-Stadtmitte', 'ETH-Bahnhof', 'ETH-Sunnyday', 'ETH-Pedcross2', 'KITTI-13', 'KITTI-17', 'ADL-Rundle-6', 'ADL-Rundle-8', 'Venice-2']
     args = parse_args()
     display = args.display
     phase = 'train'
     total_time = 0.0
     total_frames = 0
-    colours = np.random.rand(32,3) #used only for display
+    colours = np.random.rand(32, 3) #used only for display
     if(display):
         if not os.path.exists('mot_benchmark'):
-            print('\n\tERROR: mot_benchmark link not found!\n\n        Create a symbolic link to the MOT benchmark\n        (https://motchallenge.net/data/2D_MOT_2015/#download). E.g.:\n\n        $ ln -s /path/to/MOT2015_challenge/2DMOT2015 mot_benchmark\n\n')
+            print('\n\tERROR: mot_benchmark link not found!\n\n    Create a symbolic link to the MOT benchmark\n    (https://motchallenge.net/data/2D_MOT_2015/#download). E.g.:\n\n    $ ln -s /path/to/MOT2015_challenge/2DMOT2015 mot_benchmark\n\n')
             exit()
         plt.ion()
         fig = plt.figure() 
@@ -222,18 +233,18 @@ if __name__ == '__main__':
     
     for seq in sequences:
         mot_tracker = Sort() #create instance of the SORT tracker
-        seq_dets = np.loadtxt('data/%s/det.txt'%(seq),delimiter=',') #load detections
-        with open('output/%s.txt'%(seq),'w') as out_file:
-            print("Processing %s."%(seq))
-            for frame in range(int(seq_dets[:,0].max())):
+        seq_dets = np.loadtxt('data/%s/det.txt' % (seq), delimiter=',').astype('float32') #load detections
+        with open('output/%s.txt' % (seq), 'w') as out_file:
+            print("Processing %s." % (seq))
+            for frame in range(int(seq_dets[:, 0].max())):
                 frame += 1 #detection and frame numbers begin at 1
-                dets = seq_dets[seq_dets[:,0]==frame,2:7]
-                dets[:,2:4] += dets[:,0:2] #convert to [x1,y1,w,h] to [x1,y1,x2,y2]
+                dets = seq_dets[seq_dets[:, 0]==frame, 2:7]
+                dets[:, 2:4] += dets[:, 0:2] #convert to [x1, y1, w, h] to [x1, y1, x2, y2]
                 total_frames += 1
 
                 if(display):
                     ax1 = fig.add_subplot(111, aspect='equal')
-                    fn = 'mot_benchmark/%s/%s/img1/%06d.jpg'%(phase,seq,frame)
+                    fn = 'mot_benchmark/%s/%s/img1/%06d.jpg' % (phase, seq, frame)
                     im =io.imread(fn)
                     ax1.imshow(im)
                     plt.title(seq+' Tracked Targets')
@@ -244,10 +255,10 @@ if __name__ == '__main__':
                 total_time += cycle_time
 
                 for d in trackers:
-                    print('%d,%d,%.2f,%.2f,%.2f,%.2f,1,-1,-1,-1'%(frame,d[4],d[0],d[1],d[2]-d[0],d[3]-d[1]),file=out_file)
+                    print('%d, %d, %.2f, %.2f, %.2f, %.2f, 1, -1, -1, -1' % (frame, d[4], d[0], d[1], d[2]-d[0], d[3]-d[1]), file=out_file)
                     if(display):
                         d = d.astype(np.int32)
-                        ax1.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,lw=3,ec=colours[d[4]%32,:]))
+                        ax1.add_patch(patches.Rectangle((d[0], d[1]), d[2]-d[0], d[3]-d[1], fill=False, lw=3, ec=colours[d[4]%32, :]))
                         ax1.set_adjustable('box-forced')
 
                 if(display):
@@ -255,7 +266,7 @@ if __name__ == '__main__':
                     plt.draw()
                     ax1.cla()
 
-    print("Total Tracking took: %.3f for %d frames or %.1f FPS"%(total_time,total_frames,total_frames/total_time))
+    print("Total Tracking took: %.3f for %d frames or %.1f FPS" % (total_time, total_frames, total_frames / total_time))
     if(display):
         print("Note: to get real runtime results run without the option: --display")
     

@@ -75,8 +75,8 @@ def convert_x_to_bbox(np.ndarray[DTYPE_t, ndim=2] x, DTYPE_t score=-1):
     h = x[2, 0] / w
     
     x1 = x[0, 0] - w / 2
-    x2 = x[1, 0] - h / 2
-    y1 = x[0, 0] + w / 2
+    y1 = x[1, 0] - h / 2
+    x2 = x[0, 0] + w / 2
     y2 = x[1, 0] + h / 2
     
     if(score==-1):
