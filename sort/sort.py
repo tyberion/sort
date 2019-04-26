@@ -22,7 +22,7 @@ from sklearn.utils.linear_assignment_ import linear_assignment
 
 from filterpy.kalman import KalmanFilter
 
-from utils import iou, convert_bbox_to_z, convert_x_to_bbox
+from .utils import iou, convert_bbox_to_z, convert_x_to_bbox
 
 DIM_X = 7
 DIM_Z = 4
