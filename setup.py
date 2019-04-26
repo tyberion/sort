@@ -1,19 +1,22 @@
-#  import numpy as np
-#  
-#  from distutils.core import setup
-#  from Cython.Build import cythonize
-#  
-#  setup(
-#      ext_modules = cythonize('sort_utils.pyx'),
-#      include_dirs = [np.get_include()]
-#  )
+import numpy as np
 
-import setuptools
+from setuptools import setup, find_packages
+from setuptools.extension import Extension
+
+from Cython.Distutils import build_ext
+
+cmdclass = { }
+ext_modules = [ ]
+
+ext_modules += [
+    Extension("sort.utils", [ "sort/utils.pyx" ]),
+]
+cmdclass.update({ 'build_ext': build_ext })
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-setuptools.setup(
+setup(
     name="sort-kruithofmc",
     version="1.0.0",
     author="Maarten Kruithof",
@@ -22,10 +25,13 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/tyberion/sort",
-    packages=setuptools.find_packages(),
+    packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU License",
         "Operating System :: OS Independent",
     ],
+    include_dirs = [np.get_include()],
+    cmdclass=cmdclass,
+    ext_modules=ext_modules,
 )
